@@ -3,6 +3,10 @@ from flask import Flask, request, jsonify
 import requests
 import os
 import fitz
+import logging
+
+# Konfigurasi logging
+logging.basicConfig(level=logging.DEBUG)
 
 wa_token = os.environ.get("WA_TOKEN")
 genai.configure(api_key=os.environ.get("GEN_API"))
@@ -56,6 +60,7 @@ def send(answer):
     }
     
     response = requests.post(url, headers=headers, json=data)
+    logging.debug(f"Send response: {response.status_code}, {response.text}")
     return response
 
 def save_file(content, filename):
@@ -90,8 +95,10 @@ def webhook():
     elif request.method == "POST":
         try:
             data = request.get_json()["entry"][0]["changes"][0]["value"]["messages"][0]
+            logging.debug(f"Received data: {data}")
             if data["type"] == "text":
                 prompt = data["text"]["body"]
+                logging.debug(f"Received text prompt: {prompt}")
                 # Periksa apakah prompt adalah pertanyaan tentang gambar yang sudah diproses
                 if prompt.startswith("What about the image with ID"):
                     image_id = prompt.split()[-1]
@@ -109,6 +116,7 @@ def webhook():
                 media_response = requests.get(media_url_endpoint, headers=headers)
                 media_url = media_response.json()["url"]
                 media_download_response = requests.get(media_url, headers=headers)
+                logging.debug(f"Media URL: {media_url}")
                 
                 if data["type"] == "audio":
                     filename = "temp_audio.mp3"
@@ -118,10 +126,12 @@ def webhook():
                     filename = "temp_document.pdf"
                 
                 permanent_path = save_file(media_download_response.content, filename)
+                logging.debug(f"Saved file to: {permanent_path}")
                 
                 file = genai.upload_file(path=permanent_path, display_name="tempfile")
                 response = model.generate_content(["What is this", file])
                 answer = response._result.candidates[0].content.parts[0].text
+                logging.debug(f"Generated content: {answer}")
                 
                 # Simpan informasi gambar ke dictionary
                 processed_images[data["id"]] = {"path": permanent_path, "description": answer}
@@ -129,7 +139,7 @@ def webhook():
                 convo.send_message(f"This is a voice/image message from user transcribed by an llm model, reply to the user based on the transcription: {answer}")
                 send(convo.last.text)
         except Exception as e:
-            print(e)
+            logging.error(f"Error processing request: {e}")
             pass
         return jsonify({"status": "ok"}), 200
 
