@@ -59,8 +59,19 @@ def send(answer):
     return response
 
 def save_file(content, filename):
-    with open(filename, "wb") as file:
+    permanent_directory = "/path/to/permanent/storage"
+    if not os.path.exists(permanent_directory):
+        os.makedirs(permanent_directory)
+    
+    permanent_path = os.path.join(permanent_directory, filename)
+    
+    with open(permanent_path, "wb") as file:
         file.write(content)
+    
+    return permanent_path
+
+# Menyimpan konteks gambar yang telah diproses
+processed_images = {}
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -91,26 +102,18 @@ def webhook():
                 media_download_response = requests.get(media_url, headers=headers)
                 
                 if data["type"] == "audio":
-                    filename = "/tmp/temp_audio.mp3"
+                    filename = "temp_audio.mp3"
                 elif data["type"] == "image":
-                    filename = "/tmp/temp_image.jpg"
+                    filename = "temp_image.jpg"
                 elif data["type"] == "document":
-                    doc = fitz.open(stream=media_download_response.content, filetype="pdf")
-                    for _, page in enumerate(doc):
-                        destination = "/tmp/temp_image.jpg"
-                        pix = page.get_pixmap()
-                        pix.save(destination)
-                        file = genai.upload_file(path=destination, display_name="tempfile")
-                        response = model.generate_content(["What is this", file])
-                        answer = response._result.candidates[0].content.parts[0].text
-                        convo.send_message(f"This message is created by an llm model based on the image prompt of user, reply to the user based on this: {answer}")
-                        send(convo.last.text)
-                        save_file(media_download_response.content, destination)
-                else:
-                    send("This format is not Supported by the bot ☹")
+                    filename = "temp_document.pdf"
                 
-                save_file(media_download_response.content, filename)
-                file = genai.upload_file(path=filename, display_name="tempfile")
+                permanent_path = save_file(media_download_response.content, filename)
+                
+                # Simpan informasi gambar yang telah diproses
+                processed_images[data["id"]] = permanent_path
+                
+                file = genai.upload_file(path=permanent_path, display_name="tempfile")
                 response = model.generate_content(["What is this", file])
                 answer = response._result.candidates[0].content.parts[0].text
                 convo.send_message(f"This is a voice/image message from user transcribed by an llm model, reply to the user based on the transcription: {answer}")
