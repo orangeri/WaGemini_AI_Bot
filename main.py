@@ -92,8 +92,17 @@ def webhook():
             data = request.get_json()["entry"][0]["changes"][0]["value"]["messages"][0]
             if data["type"] == "text":
                 prompt = data["text"]["body"]
-                convo.send_message(prompt)
-                send(convo.last.text)
+                # Periksa apakah prompt adalah pertanyaan tentang gambar yang sudah diproses
+                if prompt.startswith("What about the image with ID"):
+                    image_id = prompt.split()[-1]
+                    if image_id in processed_images:
+                        answer = processed_images[image_id]["description"]
+                        send(answer)
+                    else:
+                        send("I don't have information about that image.")
+                else:
+                    convo.send_message(prompt)
+                    send(convo.last.text)
             else:
                 media_url_endpoint = f'https://graph.facebook.com/v18.0/{data[data["type"]]["id"]}/'
                 headers = {'Authorization': f'Bearer {wa_token}'}
@@ -110,12 +119,13 @@ def webhook():
                 
                 permanent_path = save_file(media_download_response.content, filename)
                 
-                # Simpan informasi gambar yang telah diproses
-                processed_images[data["id"]] = permanent_path
-                
                 file = genai.upload_file(path=permanent_path, display_name="tempfile")
                 response = model.generate_content(["What is this", file])
                 answer = response._result.candidates[0].content.parts[0].text
+                
+                # Simpan informasi gambar ke dictionary
+                processed_images[data["id"]] = {"path": permanent_path, "description": answer}
+                
                 convo.send_message(f"This is a voice/image message from user transcribed by an llm model, reply to the user based on the transcription: {answer}")
                 send(convo.last.text)
         except Exception as e:
